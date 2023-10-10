@@ -1,4 +1,4 @@
 127.0.0.1
-8.8.8.8
-facebook.com,yahoo.com,example.com
+208.67.222.222
+facebook.com,youtube.com
 not resolved

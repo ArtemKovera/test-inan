@@ -1,19 +1,13 @@
 /* 
-    Simple DNS proxy server implementation
+    Simple DNS proxy server implementation.  
 */
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <unistd.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
 
-#define UPSTREAM_DNS_PORT 53
-#define PROXXY_DNS_PORT 8053
+#define DNS_PORT 53
 #define SMALL_BUFFER_SIZE 64
 #define BIG_BUFFER_SIZE 4096
 #define DEFAULT_CONFIG_FILE_NAME "dns_proxy_config.txt"
@@ -24,16 +18,11 @@ char UPSTREAM_DNS[SMALL_BUFFER_SIZE];
 char RESTRICTED_DOMAINS[BIG_BUFFER_SIZE];
 char RESPONSE_PHRASE[SMALL_BUFFER_SIZE];  
 
-// Function to forward DNS query to the upstream DNS server
+//Function to forward DNS query to the upstream DNS server
 void forwardDNSquery(const char * query, char * response, const char * upstreamDNS) 
 {
-    // Create a socket to communicate with the upstream DNS server
     
-    puts("aaa");
-
     int upstreamDNSsocket = socket(AF_INET, SOCK_DGRAM, 0);
-
-    puts("bbb"); 
 
     if (upstreamDNSsocket == -1) 
     {
@@ -41,35 +30,33 @@ void forwardDNSquery(const char * query, char * response, const char * upstreamD
         exit(EXIT_FAILURE);
     }
 
-    // Set up the address structure for the upstream DNS server
     struct sockaddr_in upstreamDNSaddr;
     upstreamDNSaddr.sin_family = AF_INET;
 
-    puts("ccc");
-    upstreamDNSaddr.sin_port = htons(UPSTREAM_DNS_PORT);
-    puts("ddd");
-    inet_pton(AF_INET, "208.67.222.222", &upstreamDNSaddr.sin_addr);
-    puts("eee");
+    upstreamDNSaddr.sin_port = htons(DNS_PORT);
+    inet_pton(AF_INET, upstreamDNS, &upstreamDNSaddr.sin_addr);
 
     // Send the DNS query to the upstream DNS server
     sendto(upstreamDNSsocket, query, strlen(query), 0,
            (struct sockaddr *)&upstreamDNSaddr, sizeof(upstreamDNSaddr));
-    puts("fff");
-
-    // Receive the response from the next DNS server
+    
+    //for debug and testing
+    //puts("before response from the upstream DNS server");
+    
+    // Receive the response from the upstream DNS server
     ssize_t receivedBytes = recvfrom(upstreamDNSsocket, response, BIG_BUFFER_SIZE, 0, NULL, NULL);
-    puts("jjj");
     if (receivedBytes == -1) 
     {
-        perror("Error receiving data from next DNS server");
+        perror("Error receiving data from upstream DNS server");
         close(upstreamDNSsocket);
         exit(EXIT_FAILURE);
     }
+    //for debug and testing
+    //puts("after response from the upstream DNS server");
 
     // Null-terminate the received data
     response[receivedBytes] = '\0';
 
-    // Close the socket for the next DNS server
     close(upstreamDNSsocket);
 }
 
@@ -82,12 +69,12 @@ void parseConfigFile(FILE * restrict fl, char * proxyServer, char * upstreamDNS,
     fscanf(fl, "%4096s\n", restrictedDomains);  //Probably I need to change that line
     fscanf(fl, "%[^\n]\n", response);
 
-    /* code for debugging
-    printf("PROXY_SERVER_ADDR: %s\n", proxyServer); 
-    printf("UPSTREAM_DNS: %s\n", upstreamDNS); 
-    printf("RESTRICTED_DOMAINS: %s\n", restrictedDomains); 
-    printf("RESPONSE: %s\n", response);  
-    */
+    //code for debugging
+    //printf("PROXY_SERVER_ADDR: %s\n", proxyServer); 
+    //printf("UPSTREAM_DNS: %s\n", upstreamDNS); 
+    //printf("RESTRICTED_DOMAINS: %s\n", restrictedDomains); 
+    //printf("RESPONSE_PHRASE: %s\n", response);  
+    
 }
 
 
@@ -121,17 +108,10 @@ int main(int argc, char * argv[])
     }
     
     parseConfigFile(file, PROXY_SERVER_ADDR, UPSTREAM_DNS, RESTRICTED_DOMAINS, RESPONSE_PHRASE); 
-
-
-    printf("PROXY_SERVER_ADDR: %s\n", PROXY_SERVER_ADDR); 
-    printf("Upstream_DNS: %s\n", UPSTREAM_DNS); 
-    printf("RESTRICTED_DOMAINS: %s\n", RESTRICTED_DOMAINS); 
-    printf("RESPONSE: %s\n", RESPONSE_PHRASE);
-    
     
     // Create server socket
-    int server_socket = socket(AF_INET, SOCK_DGRAM, 0);
-    if (server_socket == -1) 
+    int serverSocket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (serverSocket == -1) 
     {
         perror("Error creating socket");
         exit(EXIT_FAILURE);
@@ -140,17 +120,17 @@ int main(int argc, char * argv[])
     // Bind to address
     struct sockaddr_in server_addr;
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(53); 
+    server_addr.sin_port = htons(DNS_PORT); 
     server_addr.sin_addr.s_addr = inet_addr(PROXY_SERVER_ADDR); 
-    if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) 
+    if (bind(serverSocket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) 
     {
         perror("Error binding socket");
-        close(server_socket);
+        close(serverSocket);
         exit(EXIT_FAILURE);
     }       
 
     printf("DNS Proxy Server listening on %s\n", PROXY_SERVER_ADDR);
-
+    
     while (1) 
     {
         char clientRequest[BIG_BUFFER_SIZE];
@@ -160,11 +140,11 @@ int main(int argc, char * argv[])
         socklen_t addr_len = sizeof(client_addr);
 
         // Receive DNS query from client
-        ssize_t receivedBytes = recvfrom(server_socket, clientRequest, sizeof(clientRequest), 0,
+        ssize_t receivedBytes = recvfrom(serverSocket, clientRequest, sizeof(clientRequest), 0,
                                          (struct sockaddr *)&client_addr, &addr_len);
         
-        //for debug
-        printf("receivedBytes = %ld\n", receivedBytes);
+        //for debug and testing
+        //printf("receivedBytes = %ld\n", receivedBytes);
 
         if (receivedBytes == -1) 
         {
@@ -178,35 +158,33 @@ int main(int argc, char * argv[])
         // Check if the domain is restricted
         if (strstr(RESTRICTED_DOMAINS, clientRequest) != NULL) 
         {
-            // Domain is restricted
             snprintf(serverResponse, BIG_BUFFER_SIZE, "%s", RESPONSE_PHRASE);
-            
-            //for debug
-            printf("restricted domain\n");
         } 
         else 
-        {
-            printf("befor forwarding\n");
+        {        
+            //for debug and testing
+            //printf("befor forwarding\n");
 
             // Forward the query to the upstream DNS server for resolution
             forwardDNSquery(clientRequest, serverResponse, UPSTREAM_DNS);
 
-            printf("after forwarding\n");
+            //for debug and testing
+            //printf("after forwarding\n");
         }
         
-        printf("befor sending response to the client\n");
+        //for debug and testing
+        //printf("befor sending response to the client\n");
 
         // Send DNS response back to the client
-        sendto(server_socket, serverResponse, strlen(serverResponse), 0,
+        sendto(serverSocket, serverResponse, strlen(serverResponse), 0,
                (struct sockaddr *)&client_addr, addr_len);
-
-        printf("after sending response to the client\n");
+        
+        //for debug and testing
+        //printf("after sending response to the client\n");
 
     }    
     
-    // Close the config file
     fclose(file); 
-    // Close server socket
-    close(server_socket);       
+    close(serverSocket);       
     return 0;
 }
